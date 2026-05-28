@@ -1,0 +1,31 @@
+# Ignore node modules and local artifacts
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Ignore local vendor (we install in build stage)
+vendor
+
+# Ignore environment and VCS
+.env
+.env.*
+.git
+.gitignore
+
+# IDE configs
+.vscode
+.idea
+
+# OS files
+.DS_Store
+
+# Laravel storage/cache that should not be included in build context
+/storage/*.key
+/storage/*.log
+/storage/framework/cache/data
+/storage/framework/sessions
+/storage/framework/views
+
+# Build output (if any)
+public/hot
+public/storage

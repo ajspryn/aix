@@ -1,0 +1,10 @@
+.env
+node_modules/
+vendor/
+storage/
+.DS_Store
+.env.*
+.idea/
+*.log
+/public/build/
+/public/assets/
