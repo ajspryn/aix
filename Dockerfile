@@ -8,17 +8,19 @@ RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoload
 COPY . .
 RUN composer dump-autoload --optimize
 
-# Stage 2: Runtime menggunakan PHP 8.3 Resmi berbasis Alpine (Sangat Ringan)
+# Stage 2: Runtime menggunakan PHP 8.4 Resmi berbasis Alpine
 FROM php:8.4-alpine AS runtime
 WORKDIR /var/www/html
 
-# Install ekstensi PHP yang wajib dibutuhkan oleh Laravel agar tidak crash
+# PERBAIKAN: Menambahkan dependensi ekstensi PHP esensial untuk Laravel & Package pihak ketiga
 RUN apk add --no-cache \
     unzip \
     libpng-dev \
     libxml2-dev \
     zip \
-    && docker-php-ext-install pdo_mysql bcmath gd
+    curl-dev \
+    oniguruma-dev \
+    && docker-php-ext-install pdo_mysql bcmath gd ctype curl mbstring xml
 
 # Salin source code yang sudah bersih dari stage vendor
 COPY --from=vendor /app /var/www/html
