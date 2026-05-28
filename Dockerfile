@@ -12,7 +12,7 @@ RUN composer dump-autoload --optimize
 FROM php:8.4-alpine AS runtime
 WORKDIR /var/www/html
 
-# PERBAIKAN: Menambahkan dependensi ekstensi PHP esensial untuk Laravel & Package pihak ketiga
+# Install ekstensi PHP yang wajib dibutuhkan oleh Laravel
 RUN apk add --no-cache \
     unzip \
     libpng-dev \
@@ -22,20 +22,24 @@ RUN apk add --no-cache \
     oniguruma-dev \
     && docker-php-ext-install pdo_mysql bcmath gd ctype curl mbstring xml
 
-# Salin source code yang sudah bersih dari stage vendor
+# Salin source code dari stage vendor
 COPY --from=vendor /app /var/www/html
 
-# Atur permission folder storage dan cache agar Laravel bisa menulis log/session
-RUN mkdir -p storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache \
-    && chown -R www-data:www-data storage bootstrap/cache
+# PERBAIKAN SQLITE & PERMISSIONS:
+# Membuat file database dan memastikan server (www-data) bisa membaca folder public & storage
+RUN touch /var/www/html/database.sqlite \
+    && mkdir -p storage bootstrap/cache \
+    && chmod -R 775 /var/www/html \
+    && chown -R www-data:www-data /var/www/html
 
-# Environment variables dasar untuk Production
+# Environment variables dasar untuk Production dengan SQLite
 ENV APP_ENV=production
 ENV APP_DEBUG=false
+ENV DB_CONNECTION=sqlite
+ENV DB_DATABASE=/var/www/html/database.sqlite
 
-# Google Cloud Run akan melempar variabel $PORT (default 8080) ke sini
+# Google Cloud Run menggunakan port 8080 secara default
 EXPOSE 8080
 
-# Jalankan server internal PHP yang otomatis mendengarkan Port 8080 secara dinamis
+# Jalankan server internal PHP dan arahkan langsung ke folder 'public'
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "public"]
