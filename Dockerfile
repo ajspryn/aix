@@ -1,40 +1,56 @@
-cat <<EOF > Dockerfile
-FROM php:8.4-apache
+# Stage 1: Build Aset (CSS/JS)
+FROM node:18 AS asset-builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-# 1. Install dependensi sistem dan ekstensi PHP yang dibutuhkan Laravel & SQLite
-RUN apt-get update && apt-get install -y \
-    libsqlite3-dev \
+# Stage 2: Aplikasi Utama
+FROM php:8.4-fpm-alpine
+
+# Install ekstensi sistem & PHP yang diperlukan Laravel
+RUN apk add --no-cache \
+    nginx \
     libpng-dev \
-    libonig-dev \
     libxml2-dev \
+    libzip-dev \
     zip \
     unzip \
-    git \
-    curl \
-    && docker-php-ext-install pdo_sqlite mbstring exif pcntl bcmath gd
+    curl
 
-# 2. Aktifkan mod_rewrite Apache (Penting untuk routing Laravel)
-RUN a2enmod rewrite
+RUN docker-php-ext-install pdo_mysql bcmath gd zip
 
-# 3. Set direktori kerja
-WORKDIR /var/www/html
-COPY . .
-
-# 4. Install Composer (Jika belum ada vendor, jika sudah ada lewati)
+# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# 5. Konfigurasi Apache untuk Laravel (Root ke folder /public)
-RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
-RUN sed -i 's/80/8080/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+# Set working directory
+WORKDIR /var/www/html
 
-# 6. Set izin folder (CRITICAL untuk SQLite dan Laravel)
-# Pastikan file database sqlite Anda juga bisa ditulis
-RUN mkdir -p storage bootstrap/cache \
-    && chmod -R 777 storage bootstrap/cache
+# Copy file aplikasi
+COPY . .
+COPY --from=asset-builder /app/public/build ./public/build
 
-# Jika file database Anda ada di folder database/
-RUN touch database/database.sqlite && chmod 777 database/database.sqlite && chmod 777 database/
+# Install dependensi PHP (Production)
+RUN composer install --no-dev --optimize-autoloader
 
+# PENTING: Membuat folder storage dan bootstrap/cache agar bisa ditulisi
+RUN mkdir -p \
+    storage/framework/cache \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache \
+    /tmp/views
+
+# Set izin akses (Cloud Run menggunakan user root secara default, tapi folder tetap butuh izin tulis)
+RUN chmod -R 777 storage bootstrap/cache /tmp/views
+
+# Copy konfigurasi Nginx (Lihat penjelasan di bawah)
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+
+# Ekspos port 8080 (Standar Cloud Run)
 EXPOSE 8080
-EOF
+
+# Jalankan Nginx dan PHP-FPM secara bersamaan
+CMD php-fpm -D && nginx -g "daemon off;"
