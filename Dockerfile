@@ -1,9 +1,9 @@
+cat <<EOF > Dockerfile
+FROM php:8.4-apache
 
-# Laravel Dockerfile for Google Cloud Run
-FROM php:8.5-fpm
-
-# Install system dependencies
+# 1. Install dependensi sistem dan ekstensi PHP yang dibutuhkan Laravel & SQLite
 RUN apt-get update && apt-get install -y \
+    libsqlite3-dev \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
@@ -11,41 +11,30 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     curl \
-    nginx \
-    supervisor
+    && docker-php-ext-install pdo_sqlite mbstring exif pcntl bcmath gd
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+# 2. Aktifkan mod_rewrite Apache (Penting untuk routing Laravel)
+RUN a2enmod rewrite
 
-# Install Composer
-COPY --from=composer:2.5 /usr/bin/composer /usr/bin/composer
-
-# Set working directory
-WORKDIR /var/www
-
-# Copy application source
+# 3. Set direktori kerja
+WORKDIR /var/www/html
 COPY . .
 
-# Install Laravel dependencies
-RUN composer install --no-dev --optimize-autoloader
+# 4. Install Composer (Jika belum ada vendor, jika sudah ada lewati)
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Copy nginx config
-COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+# 5. Konfigurasi Apache untuk Laravel (Root ke folder /public)
+RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
+RUN sed -i 's/80/8080/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Set permissions
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+# 6. Set izin folder (CRITICAL untuk SQLite dan Laravel)
+# Pastikan file database sqlite Anda juga bisa ditulis
+RUN mkdir -p storage bootstrap/cache \
+    && chmod -R 777 storage bootstrap/cache
 
-# Expose port 8080 for Cloud Run
+# Jika file database Anda ada di folder database/
+RUN touch database/database.sqlite && chmod 777 database/database.sqlite && chmod 777 database/
+
 EXPOSE 8080
-
-# Copy supervisor config
-COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-# Start supervisor (nginx + php-fpm)
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-
-# Google Cloud Run menggunakan port 8080 secara default
-EXPOSE 8080
-
-# Jalankan server internal PHP dan arahkan langsung ke folder 'public'
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "public"]
+EOF
