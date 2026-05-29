@@ -1,42 +1,48 @@
-# Stage 1: Install semua dependensi Laravel menggunakan Composer
-FROM composer:2 AS vendor
-WORKDIR /app
 
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --no-progress --no-scripts
+# Laravel Dockerfile for Google Cloud Run
+FROM php:8.5-fpm
 
-COPY . .
-RUN composer dump-autoload --optimize
-
-# Stage 2: Runtime menggunakan PHP 8.4 Resmi berbasis Alpine
-FROM php:8.4-alpine AS runtime
-WORKDIR /var/www/html
-
-# Install ekstensi PHP yang wajib dibutuhkan oleh Laravel
-RUN apk add --no-cache \
-    unzip \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     libpng-dev \
+    libonig-dev \
     libxml2-dev \
     zip \
-    curl-dev \
-    oniguruma-dev \
-    && docker-php-ext-install pdo_mysql bcmath gd ctype curl mbstring xml
+    unzip \
+    git \
+    curl \
+    nginx \
+    supervisor
 
-# Salin source code dari stage vendor
-COPY --from=vendor /app /var/www/html
+# Install PHP extensions
+RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
-# PERBAIKAN SQLITE & PERMISSIONS:
-# Membuat file database dan memastikan server (www-data) bisa membaca folder public & storage
-RUN touch /var/www/html/database.sqlite \
-    && mkdir -p storage bootstrap/cache \
-    && chmod -R 775 /var/www/html \
-    && chown -R www-data:www-data /var/www/html
+# Install Composer
+COPY --from=composer:2.5 /usr/bin/composer /usr/bin/composer
 
-# Environment variables dasar untuk Production dengan SQLite
-ENV APP_ENV=production
-ENV APP_DEBUG=false
-ENV DB_CONNECTION=sqlite
-ENV DB_DATABASE=/var/www/html/database.sqlite
+# Set working directory
+WORKDIR /var/www
+
+# Copy application source
+COPY . .
+
+# Install Laravel dependencies
+RUN composer install --no-dev --optimize-autoloader
+
+# Copy nginx config
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+
+# Set permissions
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+
+# Expose port 8080 for Cloud Run
+EXPOSE 8080
+
+# Copy supervisor config
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Start supervisor (nginx + php-fpm)
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 
 # Google Cloud Run menggunakan port 8080 secara default
 EXPOSE 8080
